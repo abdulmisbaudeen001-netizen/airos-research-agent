@@ -7,6 +7,7 @@ passes collected data to the LLM, and returns the final response string.
 
 import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 import browser as browser_engine
 import search as search_engine
@@ -14,6 +15,9 @@ import llm
 from utils import normalize_url
 
 logger = logging.getLogger(__name__)
+
+# Thread pool for running blocking search calls without freezing the event loop
+_executor = ThreadPoolExecutor(max_workers=4)
 
 
 async def generate(
@@ -32,9 +36,10 @@ async def generate(
     query = intent.get("query", "")
 
     if not tools:
-        # General question — no data collection needed
-        collected["knowledge"] = {"type": "general"}
-        return await llm.reason(user_message, collected, conversation_history)
+        # General question — LLM answers from its own knowledge and date context.
+        # Do NOT short-circuit here; pass through to reason() with empty collected
+        # so the LLM still gets the full system prompt including date context.
+        return await llm.reason(user_message, {}, conversation_history)
 
     if execution == "parallel":
         collected = await _run_parallel(tools, targets, query)
@@ -63,7 +68,7 @@ async def _run_single(tools: list, targets: list, query: str) -> dict:
     elif "search" in tools:
         q = query or (targets[0] if targets else "")
         logger.info("Search: %s", q)
-        results = search_engine.search(q)
+        results = await _search_async(q)
         collected["search"] = {"type": "search", "results": results}
 
     return collected
@@ -87,7 +92,7 @@ async def _run_parallel(tools: list, targets: list, query: str) -> dict:
 
     # If no structured targets but we have a query, fall back to single search
     if not tasks and query:
-        results = search_engine.search(query)
+        results = await _search_async(query)
         return {"search": {"type": "search", "results": results}}
 
     async def run_task(key, task_type, target):
@@ -95,7 +100,7 @@ async def _run_parallel(tools: list, targets: list, query: str) -> dict:
             data = await browser_engine.collect(target)
             return key, {"type": "browser", "data": data}
         else:
-            results = search_engine.search(target)
+            results = await _search_async(target)
             return key, {"type": "search", "results": results}
 
     results = await asyncio.gather(
@@ -132,7 +137,27 @@ async def _run_sequential(tools: list, targets: list, query: str) -> dict:
         q = query or (targets[1] if len(targets) > 1 else "")
         if q:
             logger.info("Sequential search: %s", q)
-            results = search_engine.search(q)
+            results = await _search_async(q)
             collected["search"] = {"type": "search", "results": results}
 
     return collected
+
+
+# ---------------------------------------------------------------------------
+# Async wrapper for blocking search
+# ---------------------------------------------------------------------------
+
+async def _search_async(query: str) -> list:
+    """
+    Runs the synchronous search provider in a thread pool so it does not
+    block the event loop. Returns [] on any failure.
+    """
+    loop = asyncio.get_event_loop()
+    try:
+        return await loop.run_in_executor(
+            _executor,
+            lambda: search_engine.search(query),
+        )
+    except Exception as exc:
+        logger.error("Async search failed for query '%s': %s", query, exc)
+        return []
