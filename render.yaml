@@ -2,7 +2,7 @@ services:
   - type: web
     name: airos-research-agent
     runtime: python
-    buildCommand: pip install -r requirements.txt && playwright install chromium && playwright install-deps
+    buildCommand: pip install -r requirements.txt && playwright install chromium
     startCommand: python app.py
     envVars:
       - key: PYTHON_VERSION
