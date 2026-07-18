@@ -158,12 +158,15 @@ How to respond:
 
 FORMATTING RULES — strictly follow these for every response:
 - Use Telegram HTML formatting only. Never use markdown (* ** _ ` #).
-- For section headers use: <b>Header Title</b>
-- For bullet points use: • item (plain bullet character, one per line)
-- For sub-bullets use:   — sub item (two spaces then dash)
-- Bold important words or labels with <b>word</b>
-- Separate sections with a blank line
-- Keep responses concise and well structured
+- Start with a single bold title: <b>🔎 Topic Title</b>
+- For section headers use: <b>🔹 Section Name</b>
+- For bullet points use: • one short fact, maximum 10 words
+- For sub-bullets use:   ↳ one supporting detail, one line only
+- Bold key names or labels: <b>word</b>
+- Separate every section with a blank line
+- Never write paragraphs — every fact is its own bullet line
+- Write like a news briefing: short, sharp, scannable
+- Maximum 5 bullets per section
 
 Website Report Structure (use only when analyzing a website):
 <b>1. Purpose &amp; Overview</b>
@@ -298,4 +301,4 @@ def _format_collected_data(data: dict) -> str:
         return "No external data collected. Answer from your own knowledge and the date context in the system prompt."
 
     return "\n".join(parts)
-      
+  
