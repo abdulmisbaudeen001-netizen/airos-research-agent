@@ -1,11 +1,12 @@
 """
 LLM Engine — OpenRouter integration.
 
-Two responsibilities:
-  1. classify_intent()  — fast call to determine what the user wants
-  2. reason()           — full reasoning call over collected data
+All messages flow through the LLM:
+  1. classify_intent()  — LLM decides what the user wants and where to route it
+  2. reason()           — LLM reasons over all collected data and produces the final response
 """
 
+import datetime
 import json
 import logging
 import httpx
@@ -23,63 +24,86 @@ HEADERS = {
     "X-Title": "AIROS Research Agent",
 }
 
+
 # ---------------------------------------------------------------------------
 # Intent classification
 # ---------------------------------------------------------------------------
 
-INTENT_SYSTEM_PROMPT = """You are an intent classifier for an AI research assistant.
+def _build_intent_prompt() -> str:
+    now = datetime.datetime.utcnow()
+    today = now.strftime("%A, %B %d, %Y")
+    tomorrow = (now + datetime.timedelta(days=1)).strftime("%A, %B %d, %Y")
+    return f"""You are an intent classifier for an AI research assistant.
+
+Today is {today} (UTC). Tomorrow is {tomorrow}.
 
 Classify the user's message into exactly one intent and return ONLY valid JSON.
 No markdown, no explanation, no extra text — just the JSON object.
 
 Possible intents:
 - "website_analysis": user wants to analyze, inspect, or learn about a specific website or company's web presence
-- "research": user wants current information, news, weather, comparisons, or facts that require searching the web
-- "general": user is asking a conceptual or educational question that can be answered from knowledge
+- "research": user wants current information, news, weather, events, dates, comparisons, or any facts that may require searching the web
+- "general": user is asking a conceptual or educational question that can be answered purely from knowledge, with no need for current data
+
+Rules for routing:
+- ANY question about time, dates, days, current events, news, weather, prices, or people's current status → "research"
+- Questions like "what is tomorrow", "what day is it", "what is happening in X" → "research"
+- Questions about stable concepts, definitions, or history → "general"
+- When in doubt, route to "research" not "general"
 
 For "website_analysis" and "research", extract the primary target or query.
 For comparisons, set execution to "parallel" and list multiple targets.
 For verification (check a claim against sources), set execution to "sequential".
 
 Response schema:
-{
+{{
   "intent": "website_analysis" | "research" | "general",
   "execution": "single" | "parallel" | "sequential",
   "tools": ["browser"] | ["search"] | ["browser", "search"] | [],
   "targets": ["<primary target>"],
   "query": "<search query if research intent>",
-  "confidence": 0.0–1.0
-}
+  "confidence": 0.0-1.0
+}}
 
 Examples:
 
 User: "What is FastAPI?"
-{"intent":"general","execution":"single","tools":[],"targets":[],"query":"","confidence":0.95}
+{{"intent":"general","execution":"single","tools":[],"targets":[],"query":"","confidence":0.95}}
+
+User: "What is tomorrow?"
+{{"intent":"research","execution":"single","tools":["search"],"targets":[],"query":"date tomorrow {tomorrow}","confidence":0.99}}
+
+User: "What day is today?"
+{{"intent":"general","execution":"single","tools":[],"targets":[],"query":"","confidence":0.99}}
+
+User: "What is going on in Nigeria?"
+{{"intent":"research","execution":"single","tools":["search"],"targets":[],"query":"Nigeria latest news today","confidence":0.97}}
 
 User: "Latest news about AI agents"
-{"intent":"research","execution":"single","tools":["search"],"targets":[],"query":"latest AI agents news 2025","confidence":0.97}
+{{"intent":"research","execution":"single","tools":["search"],"targets":[],"query":"latest AI agents news today","confidence":0.97}}
 
 User: "Compare Railway and Render"
-{"intent":"research","execution":"parallel","tools":["search"],"targets":["Railway hosting","Render hosting"],"query":"","confidence":0.95}
+{{"intent":"research","execution":"parallel","tools":["search"],"targets":["Railway hosting","Render hosting"],"query":"","confidence":0.95}}
 
 User: "Analyze github.com"
-{"intent":"website_analysis","execution":"single","tools":["browser"],"targets":["https://github.com"],"query":"","confidence":0.99}
+{{"intent":"website_analysis","execution":"single","tools":["browser"],"targets":["https://github.com"],"query":"","confidence":0.99}}
 
 User: "Go to stripe.com and compare its pricing with PayPal"
-{"intent":"research","execution":"parallel","tools":["browser","search"],"targets":["https://stripe.com","PayPal pricing"],"query":"","confidence":0.93}
+{{"intent":"research","execution":"parallel","tools":["browser","search"],"targets":["https://stripe.com","PayPal pricing"],"query":"","confidence":0.93}}
 
 User: "Is it true that Cloudflare went public in 2019?"
-{"intent":"research","execution":"sequential","tools":["search"],"targets":[],"query":"Cloudflare IPO date history","confidence":0.96}"""
+{{"intent":"research","execution":"sequential","tools":["search"],"targets":[],"query":"Cloudflare IPO date history","confidence":0.96}}"""
 
 
 async def classify_intent(message: str) -> dict:
     """
-    Returns an intent dict. Falls back to general intent on any failure.
+    Every message passes through the LLM for intent classification.
+    Falls back to research intent (not general) on any failure — safer default.
     """
     payload = {
         "model": LLM_MODEL,
         "messages": [
-            {"role": "system", "content": INTENT_SYSTEM_PROMPT},
+            {"role": "system", "content": _build_intent_prompt()},
             {"role": "user", "content": message},
         ],
         "max_tokens": 300,
@@ -93,16 +117,16 @@ async def classify_intent(message: str) -> dict:
             data = response.json()
 
         raw = data["choices"][0]["message"]["content"].strip()
-        # Strip markdown fences if model ignores the instruction
         raw = raw.replace("```json", "").replace("```", "").strip()
         return json.loads(raw)
 
     except Exception as exc:
         logger.error("Intent classification failed: %s", exc)
+        # Default to research so the bot at least tries to search
         return {
-            "intent": "general",
+            "intent": "research",
             "execution": "single",
-            "tools": [],
+            "tools": ["search"],
             "targets": [],
             "query": message,
             "confidence": 0.0,
@@ -113,19 +137,34 @@ async def classify_intent(message: str) -> dict:
 # Main reasoning call
 # ---------------------------------------------------------------------------
 
-REASONING_SYSTEM_PROMPT = """You are AIROS Research Agent, a professional AI research assistant.
+def _build_reasoning_prompt() -> str:
+    now = datetime.datetime.utcnow()
+    today = now.strftime("%A, %B %d, %Y")
+    tomorrow = (now + datetime.timedelta(days=1)).strftime("%A, %B %d, %Y")
+    current_time = now.strftime("%H:%M UTC")
 
-You receive structured data collected from websites and/or web searches.
-Your job is to analyze this data and produce a clear, accurate, well-organized response.
+    return f"""You are AIROS Research Agent, a professional AI research assistant.
+
+Current date: {today}
+Tomorrow: {tomorrow}
+Current time: {current_time}
+
+Every message from the user has already been routed through the intent classifier.
+You now receive the user's message plus any data collected (search results, browser data, or nothing).
+Your job is to produce a clear, accurate, well-organized response.
 
 Rules:
-- Base your response only on the provided data. Do not invent facts.
-- Distinguish clearly between what you observed and what you infer.
-- If data is missing or incomplete, say so rather than guessing.
+- You always know today's date and tomorrow's date from the context above. Use it.
+- If the user asks about time or dates, answer directly from the date context above.
+- If search or browser data was collected, base your response on it.
+- If no data was collected but you know the answer from general knowledge, answer it.
+- Only say you don't know if you genuinely cannot answer even with the date context and your knowledge.
+- Distinguish clearly between what you observed in data and what you know from knowledge.
 - Keep responses concise and readable in Telegram (plain text, no HTML).
 - Use short paragraphs. Use dashes for lists, not markdown bullets.
 - For website analysis, follow the report structure below.
 - For research questions, synthesize findings into a direct answer.
+- For general knowledge questions, answer directly and confidently.
 
 Website Report Structure (use when analyzing a site):
 1. Purpose & Overview
@@ -143,14 +182,14 @@ Keep each section brief. Telegram messages have no length limit but users prefer
 
 async def reason(user_message: str, collected_data: dict, conversation_history: list[dict]) -> str:
     """
-    Final reasoning step. Takes the user's original message and all collected data.
+    Final reasoning step. Every response passes through the LLM.
+    Takes the user's original message, all collected data, and conversation history.
     Returns the formatted response string.
     """
-    # Build a compact representation of collected data for the prompt
     data_summary = _format_collected_data(collected_data)
 
     messages = [
-        {"role": "system", "content": REASONING_SYSTEM_PROMPT},
+        {"role": "system", "content": _build_reasoning_prompt()},
     ]
 
     # Include short-term conversation history (last 6 exchanges max)
@@ -184,13 +223,17 @@ async def reason(user_message: str, collected_data: dict, conversation_history: 
         return "Something went wrong while generating the response. Please try again."
 
 
+# ---------------------------------------------------------------------------
+# Data formatter
+# ---------------------------------------------------------------------------
+
 def _format_collected_data(data: dict) -> str:
     """
     Converts collected data into a compact text representation for the LLM.
     Drops the screenshot (binary) and caps large arrays to avoid token overflow.
     """
     if not data:
-        return "No data collected."
+        return "No external data collected — answer from knowledge and date context."
 
     parts = []
 
@@ -248,12 +291,12 @@ def _format_collected_data(data: dict) -> str:
         elif payload.get("type") == "search":
             results = payload.get("results", [])
             if not results:
-                parts.append("No search results found.")
+                parts.append("Search returned no results.")
             else:
                 for i, r in enumerate(results[:5], 1):
                     parts.append(f"{i}. {r.get('title')}\n   {r.get('url')}\n   {r.get('body', '')[:300]}")
 
         elif payload.get("type") == "general":
-            parts.append("No external data collected — answering from knowledge.")
+            parts.append("No external data collected — answer from knowledge and date context.")
 
     return "\n".join(parts)
