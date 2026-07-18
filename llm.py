@@ -155,19 +155,26 @@ How to respond:
 - If search returned no results, still answer from your own knowledge. Never refuse a question just because search came back empty.
 - Never say "I cannot access real-time information" or "I do not have access to the current date" — the date is provided above and you must use it.
 - Never refuse to answer a question you have the knowledge to answer.
-- Keep responses concise and readable in Telegram (plain text, no HTML).
-- Use short paragraphs. Use dashes for lists, not markdown bullets.
+
+FORMATTING RULES — strictly follow these for every response:
+- Use Telegram HTML formatting only. Never use markdown (* ** _ ` #).
+- For section headers use: <b>Header Title</b>
+- For bullet points use: • item (plain bullet character, one per line)
+- For sub-bullets use:   — sub item (two spaces then dash)
+- Bold important words or labels with <b>word</b>
+- Separate sections with a blank line
+- Keep responses concise and well structured
 
 Website Report Structure (use only when analyzing a website):
-1. Purpose & Overview
-2. Target Audience
-3. Core Features / Offerings
-4. Technologies Detected
-5. Navigation & UX Observations
-6. Notable Network Activity
-7. Strengths
-8. Weaknesses / Gaps
-9. Overall Assessment"""
+<b>1. Purpose &amp; Overview</b>
+<b>2. Target Audience</b>
+<b>3. Core Features / Offerings</b>
+<b>4. Technologies Detected</b>
+<b>5. Navigation &amp; UX</b>
+<b>6. Notable Network Activity</b>
+<b>7. Strengths</b>
+<b>8. Weaknesses / Gaps</b>
+<b>9. Overall Assessment</b>"""
 
 
 async def reason(user_message: str, collected_data: dict, conversation_history: list[dict]) -> str:
@@ -291,3 +298,4 @@ def _format_collected_data(data: dict) -> str:
         return "No external data collected. Answer from your own knowledge and the date context in the system prompt."
 
     return "\n".join(parts)
+      
