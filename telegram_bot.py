@@ -24,6 +24,15 @@ logger = logging.getLogger(__name__)
 _history: dict[int, list[dict]] = {}
 MAX_HISTORY = 12  # Keep last 6 exchanges (12 messages)
 
+# Keywords that signal a time-sensitive query requiring live search.
+# Used as a safety net when the LLM classifier misfires and returns "general"
+# for something that actually needs current information.
+_RESEARCH_KEYWORDS = (
+    "latest", "recent", "current", "today's news", "what's happening",
+    "what is happening", "what happened", "yesterday", "last night",
+    "breaking", "update", "news", "going on", "right now",
+)
+
 
 # ---------------------------------------------------------------------------
 # Handlers
@@ -56,13 +65,28 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if intent:
         logger.info("[%s] Structural route: %s", chat_id, intent["intent"])
         await _send_typing(update, context)
-        await update.message.reply_text("Opening website...")
+        action_msg = _describe_action(intent)
+        if action_msg:
+            await update.message.reply_text(action_msg)
     else:
         # --- LLM intent classifier ---
         await _send_typing(update, context)
         await update.message.reply_text("Thinking...")
         intent = await llm.classify_intent(user_message)
         logger.info("[%s] LLM intent: %s (%.2f)", chat_id, intent.get("intent"), intent.get("confidence", 0))
+
+        # Safety net: if classifier returned "general" but the message contains
+        # time-sensitive keywords, upgrade to research so we get live results.
+        if intent.get("intent") == "general" and _is_time_sensitive(user_message):
+            logger.info("[%s] Upgrading general → research (time-sensitive keywords detected)", chat_id)
+            intent = {
+                "intent": "research",
+                "execution": "single",
+                "tools": ["search"],
+                "targets": [],
+                "query": user_message,
+                "confidence": 0.8,
+            }
 
         # Inform user what we're about to do
         action_msg = _describe_action(intent)
@@ -136,6 +160,15 @@ def _structural_route(text: str) -> dict | None:
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _is_time_sensitive(text: str) -> bool:
+    """
+    Returns True if the message contains keywords that suggest it needs
+    live information from the web.
+    """
+    lower = text.lower()
+    return any(kw in lower for kw in _RESEARCH_KEYWORDS)
+
+
 def _describe_action(intent: dict) -> str:
     i = intent.get("intent")
     tools = intent.get("tools", [])
@@ -193,3 +226,4 @@ async def start_polling(app: Application) -> None:
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)
     logger.info("Bot is online and polling.")
+    
