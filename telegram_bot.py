@@ -110,7 +110,11 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # --- Send response ---
     # Telegram has a 4096 char limit per message
     for chunk in _split_message(response):
-        await update.message.reply_text(chunk)
+        try:
+            await update.message.reply_text(chunk, parse_mode="HTML")
+        except Exception:
+            # If HTML parsing fails (malformed tags), fall back to plain text
+            await update.message.reply_text(chunk)
 
     logger.info("[%s] Response sent (%d chars)", chat_id, len(response))
 
@@ -226,4 +230,3 @@ async def start_polling(app: Application) -> None:
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)
     logger.info("Bot is online and polling.")
-    
