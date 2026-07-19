@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AIROS Research Agent</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #080C14;
+      --surface:    #0F1623;
+      --card:       #1A2332;
+      --border:     #243044;
+      --cyan:       #00D4FF;
+      --cyan-dim:   rgba(0, 212, 255, 0.12);
+      --cyan-glow:  rgba(0, 212, 255, 0.35);
+      --text:       #E8EDF5;
+      --text-muted: #6B7A99;
+      --text-dim:   #3D4F6E;
+      --error:      #FF4D6A;
+      --success:    #00E5A0;
+      --radius:     14px;
+      --radius-sm:  8px;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Layout ── */
+    .shell {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 20px 60px;
+    }
+
+    /* ── Header ── */
+    .header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    .logo-mark {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .logo-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--cyan);
+      box-shadow: 0 0 12px var(--cyan-glow);
+      animation: pulse-dot 2.4s ease-in-out infinite;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.5; transform: scale(0.7); }
+    }
+
+    .logo-text {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--cyan);
+    }
+
+    .header h1 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(28px, 5vw, 42px);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      line-height: 1.15;
+    }
+
+    .header h1 span {
+      color: var(--cyan);
+    }
+
+    .header p {
+      margin-top: 10px;
+      color: var(--text-muted);
+      font-size: 14px;
+      font-weight: 400;
+      letter-spacing: 0.01em;
+    }
+
+    /* ── Card ── */
+    .card {
+      width: 100%;
+      max-width: 680px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+    }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+
+    .tab {
+      flex: 1;
+      padding: 16px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      background: none;
+      border: none;
+      cursor: pointer;
+      transition: color 0.2s, border-bottom 0.2s;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+
+    .tab.active {
+      color: var(--cyan);
+      border-bottom-color: var(--cyan);
+    }
+
+    .tab:hover:not(.active) {
+      color: var(--text-muted);
+    }
+
+    /* ── Tab Panels ── */
+    .panel {
+      display: none;
+      padding: 36px 32px;
+    }
+
+    .panel.active { display: flex; flex-direction: column; align-items: center; }
+
+    /* ── Voice Panel ── */
+    .orb-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 32px;
+    }
+
+    .orb-ring {
+      position: absolute;
+      border-radius: 50%;
+      border: 1px solid var(--cyan-glow);
+      animation: ring-expand 2.4s ease-out infinite;
+      opacity: 0;
+    }
+
+    .orb-ring:nth-child(1) { width: 140px; height: 140px; animation-delay: 0s; }
+    .orb-ring:nth-child(2) { width: 180px; height: 180px; animation-delay: 0.6s; }
+    .orb-ring:nth-child(3) { width: 220px; height: 220px; animation-delay: 1.2s; }
+
+    @keyframes ring-expand {
+      0%   { transform: scale(0.7); opacity: 0.6; }
+      100% { transform: scale(1);   opacity: 0; }
+    }
+
+    .orb-ring.idle { animation: none; opacity: 0; }
+
+    .orb {
+      position: relative;
+      z-index: 2;
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 38% 38%, #1AEBFF, #006680);
+      box-shadow: 0 0 40px rgba(0, 212, 255, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s;
+      border: none;
+      outline: none;
+    }
+
+    .orb:hover { transform: scale(1.06); box-shadow: 0 0 60px rgba(0, 212, 255, 0.4); }
+    .orb:active { transform: scale(0.96); }
+
+    .orb svg { width: 36px; height: 36px; color: #fff; }
+
+    .orb.listening {
+      animation: orb-breathe 1s ease-in-out infinite alternate;
+    }
+
+    @keyframes orb-breathe {
+      from { box-shadow: 0 0 40px rgba(0, 212, 255, 0.3); transform: scale(1); }
+      to   { box-shadow: 0 0 80px rgba(0, 212, 255, 0.7); transform: scale(1.08); }
+    }
+
+    .orb.speaking {
+      animation: orb-speak 0.4s ease-in-out infinite alternate;
+    }
+
+    @keyframes orb-speak {
+      from { box-shadow: 0 0 40px rgba(0, 229, 160, 0.3); }
+      to   { box-shadow: 0 0 80px rgba(0, 229, 160, 0.6); }
+    }
+
+    .voice-status {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+      min-height: 20px;
+      transition: color 0.2s;
+    }
+
+    .voice-status.listening { color: var(--cyan); }
+    .voice-status.speaking  { color: var(--success); }
+    .voice-status.thinking  { color: var(--text-muted); }
+
+    .transcript-box {
+      width: 100%;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      min-height: 80px;
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.65;
+      margin-bottom: 12px;
+      font-style: italic;
+    }
+
+    .transcript-box.has-content {
+      color: var(--text);
+      font-style: normal;
+    }
+
+    .response-box {
+      width: 100%;
+      background: var(--cyan-dim);
+      border: 1px solid rgba(0, 212, 255, 0.2);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      min-height: 80px;
+      font-size: 14px;
+      color: var(--text);
+      line-height: 1.7;
+      display: none;
+    }
+
+    .response-box.visible { display: block; }
+
+    .response-label {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      margin-bottom: 8px;
+    }
+
+    .voice-hint {
+      margin-top: 20px;
+      font-size: 12px;
+      color: var(--text-dim);
+      text-align: center;
+    }
+
+    /* ── Text Panel ── */
+    .chat-window {
+      width: 100%;
+      height: 340px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-bottom: 20px;
+      padding-right: 4px;
+    }
+
+    .chat-window::-webkit-scrollbar { width: 4px; }
+    .chat-window::-webkit-scrollbar-track { background: transparent; }
+    .chat-window::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .msg {
+      display: flex;
+      flex-direction: column;
+      max-width: 88%;
+    }
+
+    .msg.user  { align-self: flex-end; align-items: flex-end; }
+    .msg.agent { align-self: flex-start; align-items: flex-start; }
+
+    .msg-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 5px;
+      font-family: 'Space Grotesk', sans-serif;
+    }
+
+    .msg-bubble {
+      padding: 12px 16px;
+      border-radius: 14px;
+      font-size: 14px;
+      line-height: 1.65;
+    }
+
+    .msg.user  .msg-bubble {
+      background: var(--cyan);
+      color: #080C14;
+      font-weight: 500;
+      border-bottom-right-radius: 4px;
+    }
+
+    .msg.agent .msg-bubble {
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-bottom-left-radius: 4px;
+    }
+
+    .msg.agent .msg-bubble.thinking {
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    .chat-empty {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-dim);
+      font-size: 13px;
+      text-align: center;
+      line-height: 1.8;
+    }
+
+    /* ── Input Row ── */
+    .input-row {
+      display: flex;
+      gap: 10px;
+      width: 100%;
+    }
+
+    .text-input {
+      flex: 1;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 13px 16px;
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.2s;
+      resize: none;
+      height: 48px;
+      line-height: 1.4;
+    }
+
+    .text-input::placeholder { color: var(--text-dim); }
+    .text-input:focus { border-color: var(--cyan); }
+
+    .send-btn {
+      width: 48px;
+      height: 48px;
+      border-radius: var(--radius-sm);
+      background: var(--cyan);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+
+    .send-btn:hover   { opacity: 0.85; }
+    .send-btn:active  { transform: scale(0.94); }
+    .send-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .send-btn svg { width: 20px; height: 20px; color: #080C14; }
+
+    /* ── Footer ── */
+    .footer {
+      margin-top: 28px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-dim);
+      letter-spacing: 0.03em;
+    }
+
+    .footer span { color: var(--text-muted); }
+
+    /* ── Error toast ── */
+    .toast {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--error);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 10px 20px;
+      border-radius: 40px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s, transform 0.3s;
+      white-space: nowrap;
+      z-index: 999;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 520px) {
+      .shell { padding: 32px 12px 48px; }
+      .panel { padding: 28px 18px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .orb-ring, .logo-dot, .orb { animation: none !important; }
+    }
+  </style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- Header -->
+  <header class="header">
+    <div class="logo-mark">
+      <div class="logo-dot"></div>
+      <span class="logo-text">AIROS</span>
+    </div>
+    <h1>Research <span>Agent</span></h1>
+    <p>Ask anything — by voice or text. Powered by live web intelligence.</p>
+  </header>
+
+  <!-- Card -->
+  <div class="card">
+
+    <!-- Tabs -->
+    <div class="tabs" role="tablist">
+      <button class="tab active" role="tab" aria-selected="true"  onclick="switchTab('voice')">
+        🎙 Voice
+      </button>
+      <button class="tab"        role="tab" aria-selected="false" onclick="switchTab('text')">
+        💬 Text
+      </button>
+    </div>
+
+    <!-- Voice Panel -->
+    <div class="panel active" id="panel-voice">
+      <div class="orb-wrap">
+        <div class="orb-ring idle" id="ring1"></div>
+        <div class="orb-ring idle" id="ring2"></div>
+        <div class="orb-ring idle" id="ring3"></div>
+        <button class="orb" id="orb" onclick="toggleVoice()" aria-label="Start listening">
+          <!-- Mic icon -->
+          <svg id="icon-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8"  y1="23" x2="16" y2="23"/>
+          </svg>
+          <!-- Stop icon -->
+          <svg id="icon-stop" viewBox="0 0 24 24" fill="currentColor" style="display:none">
+            <rect x="6" y="6" width="12" height="12" rx="2"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="voice-status" id="voice-status">Tap to speak</div>
+
+      <div class="transcript-box" id="transcript">
+        Your words will appear here as you speak…
+      </div>
+
+      <div class="response-box" id="voice-response">
+        <div class="response-label">AIROS</div>
+        <div id="voice-response-text"></div>
+      </div>
+
+      <p class="voice-hint">Speak naturally — AIROS listens until you pause for 1.5 seconds</p>
+    </div>
+
+    <!-- Text Panel -->
+    <div class="panel" id="panel-text">
+      <div class="chat-window" id="chat-window">
+        <div class="chat-empty" id="chat-empty">
+          No messages yet.<br>Type below to start a conversation.
+        </div>
+      </div>
+
+      <div class="input-row">
+        <textarea
+          class="text-input"
+          id="text-input"
+          placeholder="Ask AIROS anything…"
+          rows="1"
+          onkeydown="handleKey(event)"
+        ></textarea>
+        <button class="send-btn" id="send-btn" onclick="sendText()" aria-label="Send">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Footer -->
+  <footer class="footer">
+    Connected to <span>AIROS Engine</span> · Live web search enabled
+  </footer>
+
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+  // ── Tab switching ──────────────────────────────────────────────
+  function switchTab(name) {
+    document.querySelectorAll('.tab').forEach((t, i) => {
+      const isActive = (i === 0 && name === 'voice') || (i === 1 && name === 'text');
+      t.classList.toggle('active', isActive);
+      t.setAttribute('aria-selected', isActive);
+    });
+    document.getElementById('panel-voice').classList.toggle('active', name === 'voice');
+    document.getElementById('panel-text').classList.toggle('active', name === 'text');
+  }
+
+  // ── Toast ─────────────────────────────────────────────────────
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3500);
+  }
+
+  // ── Voice ─────────────────────────────────────────────────────
+  const SILENCE_MS = 1500;
+
+  let recognition   = null;
+  let isListening   = false;
+  let silenceTimer  = null;
+  let fullTranscript = '';
+
+  function setOrbState(state) {
+    const orb    = document.getElementById('orb');
+    const rings  = ['ring1','ring2','ring3'].map(id => document.getElementById(id));
+    const mic    = document.getElementById('icon-mic');
+    const stop   = document.getElementById('icon-stop');
+    const status = document.getElementById('voice-status');
+
+    orb.className = 'orb';
+    rings.forEach(r => r.className = 'orb-ring idle');
+    status.className = 'voice-status';
+    mic.style.display  = 'block';
+    stop.style.display = 'none';
+
+    if (state === 'listening') {
+      orb.classList.add('listening');
+      rings.forEach(r => { r.classList.remove('idle'); });
+      mic.style.display  = 'none';
+      stop.style.display = 'block';
+      status.classList.add('listening');
+      status.textContent = 'Listening…';
+    } else if (state === 'thinking') {
+      status.classList.add('thinking');
+      status.textContent = 'Thinking…';
+    } else if (state === 'speaking') {
+      orb.classList.add('speaking');
+      status.classList.add('speaking');
+      status.textContent = 'Speaking…';
+    } else {
+      status.textContent = 'Tap to speak';
+    }
+  }
+
+  function toggleVoice() {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      showToast('Voice not supported in this browser. Use Chrome.');
+      return;
+    }
+
+    if (isListening) {
+      stopListening();
+      return;
+    }
+
+    startListening();
+  }
+
+  function startListening() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SpeechRecognition();
+    recognition.continuous      = true;
+    recognition.interimResults  = true;
+    recognition.lang            = 'en-US';
+
+    fullTranscript = '';
+
+    const transcriptEl = document.getElementById('transcript');
+    transcriptEl.textContent = '';
+    transcriptEl.classList.remove('has-content');
+
+    document.getElementById('voice-response').classList.remove('visible');
+
+    recognition.onstart = () => {
+      isListening = true;
+      setOrbState('listening');
+    };
+
+    recognition.onresult = (event) => {
+      clearTimeout(silenceTimer);
+
+      let interim = '';
+      fullTranscript = '';
+
+      for (let i = 0; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          fullTranscript += event.results[i][0].transcript + ' ';
+        } else {
+          interim += event.results[i][0].transcript;
+        }
+      }
+
+      const display = (fullTranscript + interim).trim();
+      if (display) {
+        transcriptEl.textContent = display;
+        transcriptEl.classList.add('has-content');
+      }
+
+      // Reset silence timer — fires when you stop talking
+      silenceTimer = setTimeout(() => {
+        if (fullTranscript.trim()) {
+          stopListening(true);
+        }
+      }, SILENCE_MS);
+    };
+
+    recognition.onerror = (e) => {
+      if (e.error !== 'no-speech') showToast('Microphone error: ' + e.error);
+      stopListening(false);
+    };
+
+    recognition.onend = () => {
+      if (isListening) {
+        // Restarted externally — do nothing
+      }
+    };
+
+    recognition.start();
+  }
+
+  function stopListening(sendNow = false) {
+    isListening = false;
+    clearTimeout(silenceTimer);
+    if (recognition) { recognition.stop(); recognition = null; }
+
+    if (sendNow && fullTranscript.trim()) {
+      sendVoiceQuery(fullTranscript.trim());
+    } else {
+      setOrbState('idle');
+    }
+  }
+
+  async function sendVoiceQuery(text) {
+    setOrbState('thinking');
+
+    try {
+      const res = await fetch('/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text }),
+      });
+
+      if (!res.ok) throw new Error('Server error ' + res.status);
+      const data = await res.json();
+      const reply = data.response || 'No response received.';
+
+      // Show text response
+      document.getElementById('voice-response-text').textContent = reply;
+      document.getElementById('voice-response').classList.add('visible');
+
+      // Speak it
+      speakReply(reply);
+
+    } catch (err) {
+      showToast('Could not reach AIROS. Please try again.');
+      setOrbState('idle');
+    }
+  }
+
+  function speakReply(text) {
+    if (!('speechSynthesis' in window)) {
+      setOrbState('idle');
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    setOrbState('speaking');
+
+    // Strip HTML tags for speech
+    const clean = text.replace(/<[^>]*>/g, '').trim();
+
+    const utter = new SpeechSynthesisUtterance(clean);
+    utter.rate   = 0.95;
+    utter.pitch  = 1.0;
+    utter.volume = 1.0;
+
+    // Pick best available voice
+    const voices = window.speechSynthesis.getVoices();
+    const preferred = voices.find(v =>
+      v.name.includes('Google') ||
+      v.name.includes('Microsoft') ||
+      v.lang === 'en-US'
+    );
+    if (preferred) utter.voice = preferred;
+
+    utter.onend = () => setOrbState('idle');
+    utter.onerror = () => setOrbState('idle');
+
+    window.speechSynthesis.speak(utter);
+  }
+
+  // Load voices when ready
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.onvoiceschanged = () => {};
+  }
+
+  // ── Text Chat ─────────────────────────────────────────────────
+  let chatHistory = [];
+
+  function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendText();
+    }
+  }
+
+  function appendMessage(role, text, isThinking = false) {
+    const window_ = document.getElementById('chat-window');
+    const empty   = document.getElementById('chat-empty');
+    if (empty) empty.remove();
+
+    const msg = document.createElement('div');
+    msg.className = `msg ${role}`;
+    msg.innerHTML = `
+      <div class="msg-label">${role === 'user' ? 'You' : 'AIROS'}</div>
+      <div class="msg-bubble${isThinking ? ' thinking' : ''}">${escapeHtml(text)}</div>
+    `;
+    window_.appendChild(msg);
+    window_.scrollTop = window_.scrollHeight;
+    return msg;
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  async function sendText() {
+    const input = document.getElementById('text-input');
+    const btn   = document.getElementById('send-btn');
+    const text  = input.value.trim();
+    if (!text) return;
+
+    input.value = '';
+    btn.disabled = true;
+
+    appendMessage('user', text);
+    const thinkingMsg = appendMessage('agent', 'Thinking…', true);
+
+    try {
+      const res = await fetch('/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text }),
+      });
+
+      if (!res.ok) throw new Error('Server error ' + res.status);
+      const data = await res.json();
+      const reply = data.response || 'No response received.';
+
+      // Replace thinking bubble with real response
+      const bubble = thinkingMsg.querySelector('.msg-bubble');
+      bubble.classList.remove('thinking');
+      bubble.textContent = reply;
+
+      chatHistory.push({ role: 'user', content: text });
+      chatHistory.push({ role: 'assistant', content: reply });
+
+    } catch (err) {
+      const bubble = thinkingMsg.querySelector('.msg-bubble');
+      bubble.classList.remove('thinking');
+      bubble.textContent = 'Could not reach AIROS. Please try again.';
+      showToast('Connection error. Check your network.');
+    }
+
+    btn.disabled = false;
+    document.getElementById('chat-window').scrollTop = 99999;
+  }
+</script>
+</body>
+</html>
