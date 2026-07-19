@@ -41,7 +41,7 @@ _RESEARCH_KEYWORDS = (
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        "AIROS Research Agent ready.\n\n"
+        "SHITTU Research Agent ready.\n\n"
         "You can:\n"
         "- Analyze a website: analyze stripe.com\n"
         "- Research a topic: latest AI news\n"
