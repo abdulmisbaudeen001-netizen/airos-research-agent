@@ -1,8 +1,9 @@
 """
-Telegram Bot — long polling interface.
+Telegram Bot — webhook interface.
 
 Handles incoming messages, sends progress updates, manages short-term
 conversation memory, and calls the report orchestrator.
+Webhook registration and lifecycle is handled by app.py.
 """
 
 import asyncio
@@ -223,10 +224,4 @@ def build_application() -> Application:
     return app
 
 
-async def start_polling(app: Application) -> None:
-    """Start long polling — runs until the event loop is cancelled."""
-    logger.info("Starting Telegram long polling...")
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling(drop_pending_updates=True)
-    logger.info("Bot is online and polling.")
+
