@@ -4,6 +4,8 @@ AIROS Research Agent — Entry Point.
 Webhook mode: Render sleeps when idle.
 Telegram wakes Render by posting to /webhook when a message arrives.
 Render processes it and sleeps again — no idle hours wasted.
+
+Web interface available at / — supports both voice and text.
 """
 
 import logging
@@ -11,10 +13,14 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, Request, Response
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
 from telegram import Update
 
 from config import HOST, PORT, TELEGRAM_BOT_TOKEN
 from telegram_bot import build_application
+import report
+import llm
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -37,6 +43,7 @@ telegram_app = build_application()
 # ---------------------------------------------------------------------------
 
 WEBHOOK_PATH = "/webhook"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -72,6 +79,19 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="AIROS Research Agent", lifespan=lifespan)
 
+# Serve static files (web interface assets)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+@app.get("/")
+async def index():
+    """Serve the web voice/text interface."""
+    return FileResponse("static/index.html")
+
 
 @app.get("/health")
 async def health():
@@ -88,6 +108,33 @@ async def webhook(request: Request) -> Response:
     update = Update.de_json(data, telegram_app.bot)
     await telegram_app.process_update(update)
     return Response(status_code=200)
+
+
+@app.post("/chat")
+async def chat(request: Request) -> JSONResponse:
+    """
+    Web interface endpoint — used by both voice and text tabs.
+    Receives a message, runs it through the full LLM pipeline,
+    returns the text response.
+    """
+    try:
+        data = await request.json()
+        message = data.get("message", "").strip()
+
+        if not message:
+            return JSONResponse({"response": "No message received."})
+
+        intent = await llm.classify_intent(message)
+        response = await report.generate(message, intent, [])
+
+        return JSONResponse({"response": response})
+
+    except Exception as exc:
+        logger.error("Chat endpoint error: %s", exc)
+        return JSONResponse(
+            {"response": "Something went wrong. Please try again."},
+            status_code=500,
+        )
 
 
 # ---------------------------------------------------------------------------
