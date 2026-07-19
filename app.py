@@ -9,6 +9,9 @@ Web interface available at / — supports both voice and text.
 """
 
 import logging
+import os
+import uuid
+import asyncio
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -21,6 +24,7 @@ from config import HOST, PORT, TELEGRAM_BOT_TOKEN
 from telegram_bot import build_application
 import report
 import llm
+import voice
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -33,13 +37,20 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Audio temp directory
+# ---------------------------------------------------------------------------
+
+AUDIO_DIR = "/tmp/airos_audio"
+os.makedirs(AUDIO_DIR, exist_ok=True)
+
+# ---------------------------------------------------------------------------
 # Telegram app
 # ---------------------------------------------------------------------------
 
 telegram_app = build_application()
 
 # ---------------------------------------------------------------------------
-# FastAPI lifespan — registers webhook on startup, removes on shutdown
+# FastAPI lifespan
 # ---------------------------------------------------------------------------
 
 WEBHOOK_PATH = "/webhook"
@@ -52,7 +63,6 @@ async def lifespan(app: FastAPI):
     await telegram_app.initialize()
     await telegram_app.start()
 
-    # Tell Telegram to send all updates to our Render URL
     render_url = f"https://airos-research-agent.onrender.com{WEBHOOK_PATH}"
     await telegram_app.bot.set_webhook(
         url=render_url,
@@ -62,7 +72,6 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown — remove webhook so Telegram stops sending
     logger.info("Shutting down...")
     try:
         await telegram_app.bot.delete_webhook()
@@ -79,7 +88,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="AIROS Research Agent", lifespan=lifespan)
 
-# Serve static files (web interface assets)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
@@ -89,7 +97,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
 async def index():
-    """Serve the web voice/text interface."""
     return FileResponse("static/index.html")
 
 
@@ -100,10 +107,7 @@ async def health():
 
 @app.post(WEBHOOK_PATH)
 async def webhook(request: Request) -> Response:
-    """
-    Telegram calls this endpoint every time a user sends a message.
-    This is what wakes Render up on demand.
-    """
+    """Telegram webhook — wakes Render on demand."""
     data = await request.json()
     update = Update.de_json(data, telegram_app.bot)
     await telegram_app.process_update(update)
@@ -113,21 +117,32 @@ async def webhook(request: Request) -> Response:
 @app.post("/chat")
 async def chat(request: Request) -> JSONResponse:
     """
-    Web interface endpoint — used by both voice and text tabs.
-    Receives a message, runs it through the full LLM pipeline,
-    returns the text response.
+    Web interface endpoint for both voice and text tabs.
+    Returns text response + audio URL for voice playback.
     """
     try:
         data = await request.json()
         message = data.get("message", "").strip()
+        want_audio = data.get("audio", False)
 
         if not message:
             return JSONResponse({"response": "No message received."})
 
+        # Run through full LLM pipeline
         intent = await llm.classify_intent(message)
-        response = await report.generate(message, intent, [])
+        response_text = await report.generate(message, intent, [])
 
-        return JSONResponse({"response": response})
+        result = {"response": response_text}
+
+        # Generate audio if voice tab requested it
+        if want_audio:
+            audio_id = uuid.uuid4().hex
+            audio_path = os.path.join(AUDIO_DIR, f"{audio_id}.mp3")
+            success = await voice.text_to_speech(response_text, audio_path)
+            if success:
+                result["audio_url"] = f"/audio/{audio_id}"
+
+        return JSONResponse(result)
 
     except Exception as exc:
         logger.error("Chat endpoint error: %s", exc)
@@ -135,6 +150,18 @@ async def chat(request: Request) -> JSONResponse:
             {"response": "Something went wrong. Please try again."},
             status_code=500,
         )
+
+
+@app.get("/audio/{audio_id}")
+async def serve_audio(audio_id: str) -> FileResponse:
+    """Serve generated TTS audio file."""
+    # Sanitize — only allow hex IDs
+    if not audio_id.isalnum() or len(audio_id) != 32:
+        return Response(status_code=400)
+    path = os.path.join(AUDIO_DIR, f"{audio_id}.mp3")
+    if not os.path.exists(path):
+        return Response(status_code=404)
+    return FileResponse(path, media_type="audio/mpeg")
 
 
 # ---------------------------------------------------------------------------
@@ -148,3 +175,4 @@ if __name__ == "__main__":
         port=PORT,
         log_level="info",
     )
+    
